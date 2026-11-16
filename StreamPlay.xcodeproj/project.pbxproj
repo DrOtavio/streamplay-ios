@@ -4,6 +4,46 @@
 	classes = { };
 	objectVersion = 56;
 	objects = {
+		3AB51F872C5D4EE59F43DAFE /* BrowserStore.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = BrowserStore.swift;
+			sourceTree = "<group>";
+		};
+		C91003192CBB5D5C6C8CFCE1 /* BrowserStore.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 3AB51F872C5D4EE59F43DAFE /* BrowserStore.swift */;
+		};
+		48ADD68DE278159000C5956E /* CarDisplayCoordinator.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = CarDisplayCoordinator.swift;
+			sourceTree = "<group>";
+		};
+		472415FF46F1E1E12B037401 /* CarDisplayCoordinator.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 48ADD68DE278159000C5956E /* CarDisplayCoordinator.swift */;
+		};
+		C6A2A25D2AFC2D19E68EF798 /* CarDisplayWindowSceneDelegate.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = CarDisplayWindowSceneDelegate.swift;
+			sourceTree = "<group>";
+		};
+		94072CB688F68418F3E34786 /* CarDisplayWindowSceneDelegate.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = C6A2A25D2AFC2D19E68EF798 /* CarDisplayWindowSceneDelegate.swift */;
+		};
+		61CABCAD1B75F8B41DC9DEBB /* CarDisplayViewController.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = CarDisplayViewController.swift;
+			sourceTree = "<group>";
+		};
+		C6B969AFFB3531062C260005 /* CarDisplayViewController.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 61CABCAD1B75F8B41DC9DEBB /* CarDisplayViewController.swift */;
+		};
 		731D921D9A2C84DFEE96E71F /* App.swift */ = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -121,6 +161,10 @@
 			isa = PBXGroup;
 			children = (
 				731D921D9A2C84DFEE96E71F /* App.swift */,
+				61CABCAD1B75F8B41DC9DEBB /* CarDisplayViewController.swift */,
+				C6A2A25D2AFC2D19E68EF798 /* CarDisplayWindowSceneDelegate.swift */,
+				48ADD68DE278159000C5956E /* CarDisplayCoordinator.swift */,
+				3AB51F872C5D4EE59F43DAFE /* BrowserStore.swift */,
 				A47B4959415DD15293EE9D7B /* SceneDelegate.swift */,
 				C9154F7DCF34536BEB109910 /* CarPlaySceneDelegate.swift */,
 				903B37783EB0F54D59D1EFE2 /* PlayerViewController.swift */,
@@ -156,6 +200,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				55277EF72105F66B890DEFA3 /* App.swift in Sources */,
+				C6B969AFFB3531062C260005 /* CarDisplayViewController.swift in Sources */,
+				94072CB688F68418F3E34786 /* CarDisplayWindowSceneDelegate.swift in Sources */,
+				472415FF46F1E1E12B037401 /* CarDisplayCoordinator.swift in Sources */,
+				C91003192CBB5D5C6C8CFCE1 /* BrowserStore.swift in Sources */,
 				3033FDA8A67A04016589F04A /* SceneDelegate.swift in Sources */,
 				E257D093CC77F15E72FDF66A /* CarPlaySceneDelegate.swift in Sources */,
 				55C2303485E8C410436EA81D /* PlayerViewController.swift in Sources */,

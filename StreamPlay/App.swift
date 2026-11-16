@@ -20,6 +20,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     ) -> UISceneConfiguration {
         // The role is supplied by iOS, not by an attempt to force CarPlay to open.
         // Prefer the strongly typed UIKit role; raw string comparisons are brittle.
+        // The custom CarPlay window role is not exposed as a Swift enum case.
+        // It is only delivered if the signed app has a matching Apple entitlement.
+        if connectingSceneSession.role.rawValue == "UIWindowSceneSessionRoleCarPlay" {
+            return UISceneConfiguration(name: "CarPlay Window Configuration", sessionRole: connectingSceneSession.role)
+        }
         if connectingSceneSession.role == .carTemplateApplication {
             return UISceneConfiguration(
                 name: "CarPlay Scene Configuration", sessionRole: .carTemplateApplication
@@ -33,8 +38,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 final class AppServices {
     static let shared = AppServices()
     let viewModel: ChannelViewModel
+    let browser: BrowserStore
+    let car: CarDisplayCoordinator
 
     private init() {
         viewModel = ChannelViewModel(channelService: MockChannelService())
+        browser = BrowserStore()
+        car = CarDisplayCoordinator.shared
     }
 }

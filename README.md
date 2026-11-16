@@ -1,133 +1,81 @@
-# StreamPlay — iPhone + CarPlay (SwiftUI / UIKit / AVKit)
+# StreamPlay 4 — Navegador + IPTV + CarPlay experimental
 
-**Status:** gerador Python autossuficiente + projeto-fonte Xcode (sem frameworks de terceiros) com player HLS no iPhone e cenas CarPlay. O arquivo `.ipa` não pode ser compilado neste ambiente Linux; o projeto e o `project.pbxproj` foram validados estruturalmente, mas a compilação do Swift/iOS exige Xcode no macOS. Streams HLS externos de demonstração podem ficar indisponíveis.
+**Objetivo:** aplicativo iOS com UI original inspirada na organização do LeyTV (preto, acento lima, quatro abas, tela Carro, Browser e IPTV). Não contém código, ícones, logotipos nem outros arquivos do LeyTV. Requer iOS 17+ para o iPhone; fontes AVKit/WebKit/MapKit são nativas.
 
-## Compatibilidade importante
+## O que funciona no iPhone
 
-- `CPInterfaceController.pushTemplate` **só aceita `CPTemplate`**. Nenhum `UIViewController` ou `AVPlayerLayer` pode ser colocado nessa stack. `PlayerViewController.swift` serve apenas às cenas de UI controladas pelo app (iPhone), não à tela CarPlay.
-- **CarPlay áudio:** requer aprovação da Apple e o entitlement gerenciado `com.apple.developer.carplay-audio` associado ao provisioning profile. Com essa aprovação, `CarPlayMode = audio` mostra Home/Search/Settings e `CPNowPlayingTemplate` para reprodução de áudio (incluindo a faixa de áudio de um HLS de vídeo).
-- **CarPlay vídeo estacionado:** iOS **27+**, carro que suporte *video in car*, **AirPlay video streaming** e entitlement gerenciado **`com.apple.developer.carplay-video`**. Com aprovação, defina `CarPlayMode = video` no `Info.plist`; `CPPlaybackConfiguration(preferredPresentation: .video, …)` orienta a apresentação pelo sistema. O sistema bloqueia o vídeo quando o veículo está em movimento. `CPSessionConfiguration.supportsVideoPlayback` informa se a sessão oferece suporte, não se o vídeo está disponível neste instante.
-- **Se o app oferecer conteúdo adequado a áudio e vídeo, a Apple recomenda combinar os entitlements aprovados**. Incluímos um exemplo `AudioVideo.entitlements.example`; use-o apenas quando ambos tiverem sido autorizados no seu App ID e provisioning profile.
-- **Personal Team, AltStore e Sideloadly não fornecem esses entitlements**. Sem autorização, o app roda no iPhone, mas **não ganha um ícone funcional no CarPlay real**. Não existe flag ou alteração de Info.plist que substitua a autorização. O áudio por Bluetooth/AirPlay do iPhone continua disponível, mesmo sem interface CarPlay customizada.
-- A Apple é responsável pela apresentação do vídeo CarPlay. A tela de controles `CPListTemplate` incluída é um fallback; o sistema pode apresentar vídeo no carro compatível quando uma lista com `playbackConfiguration = .video` iniciar a reprodução. A integração efetiva exige testes em veículo/CarPlay Simulator.
+- **Carro:** painel de status de conexão, caminhos para Navegador, Mídia, Mapas, touchpad e instruções de espelhamento.
+- **Navegador real:** `WKWebView`, sites por URL, pesquisa, múltiplas abas com WKWebViews separados, favoritos, histórico, atalhos e navegação voltar/avançar/recarregar. Sites podem bloquear vídeo/DRM dentro do WebKit.
+- **IPTV real:** URL remota M3U/M3U8 ou arquivo M3U local, tags `#EXTINF`, `tvg-logo`, `group-title`, filtro, favoritos, persistência, `AVPlayer`/`VideoPlayer`, botões, AirPlay. URLs de demonstração (Apple/Mux) são explicitamente identificadas como testes; nenhum canal comercial é distribuído.
+- **Mapas:** mapa MapKit interativo.
+- **Touchpad:** deslocamento, clique, scroll e texto para campo selecionado na janela CarPlay **somente se esta realmente conectar**. Nem todo site aceita clique sintético/alteração programática de campos.
 
-## Arquitetura
+## O que NÃO é garantido no carro
+
+O modo `CarDisplayWindowSceneDelegate` usa um role de `UIWindowScene` para CarPlay, de acordo com o exemplo aberto do Cafari Lite (licença MIT). O projeto não inclui nem falsifica entitlements gerenciados. **O sistema só cria essa cena se a assinatura e o veículo tiverem capacidades autorizadas.** A API oficial de vídeo CarPlay introduzida com iOS 27 também requer entitlement de vídeo e veículo compatível; os recursos disponíveis no iOS 26 são restritos.
+
+O `CarPlaySceneDelegate` original permanece para **áudio via templates**, se autorizado com entitlement de áudio. Isso não torna o navegador e vídeo disponíveis no painel. Uma conta gratuita + Sideloadly **não recebe automaticamente** permissões CarPlay. O navegador touchpad funciona apenas em uma janela CarPlay com acesso efetivo; antes disso a UI mostra `AGUARDANDO CARRO`, sem simular conexão.
+
+Use vídeo visual somente com o veículo estacionado, ou em telas destinadas a passageiros. Não tente contornar bloqueios do veículo.
+
+## Estrutura
 
 ```
+StreamPlay.xcodeproj/
 StreamPlay/
-├─ StreamPlay.xcodeproj/
-│  ├─ project.pbxproj
-│  ├─ project.xcworkspace/
-│  └─ xcshareddata/xcschemes/StreamPlay.xcscheme
-├─ StreamPlay/
-│  ├─ App.swift                   # @main UIApplicationDelegate + Scene configurations
-│  ├─ SceneDelegate.swift         # UIWindowScene para o iPhone; UIHostingController
-│  ├─ CarPlaySceneDelegate.swift  # CPTabBarTemplate + listas + Player system
-│  ├─ ContentView.swift           # SwiftUI, tabs, NavigationStack, VideoPlayer
-│  ├─ PlayerViewController.swift  # AVPlayerLayer UIKit, UIKit representable e AirPlay picker
-│  ├─ ChannelViewModel.swift      # único AVPlayer, AVPlayerItem, áudio, metadados
-│  ├─ Models.swift                # Channel, CarPlayMode
-│  ├─ ChannelService.swift        # MockChannelService assíncrono
-│  ├─ RemoteCommandController.swift # MPRemoteCommandCenter
-│  └─ Info.plist                  # duas scene roles e background audio
-├─ CarPlayEntitlements/
-│  ├─ Audio.entitlements.example
-│  └─ Video.entitlements.example
-├─ scripts/build-unsigned-ipa.sh
-├─ StreamPlay/Assets.xcassets/AppIcon.appiconset/ # ícone universal (1024 px)
-├─ gen_xcodeproj.py           # gera TODO o projeto apenas com Python
-└─ README.md
+  App.swift                 # roteamento da cena iPhone, template e janela CarPlay experimental
+  ContentView.swift         # interface original neon-lima
+  BrowserStore.swift        # tabs, WKWebView, histórico, favoritos
+  ChannelService.swift      # parser real M3U/EXTINF
+  ChannelViewModel.swift    # importação, AVPlayer, cache local
+  CarDisplayCoordinator.swift
+  CarDisplayWindowSceneDelegate.swift
+  CarDisplayViewController.swift
+  CarPlaySceneDelegate.swift
+  Models.swift
+  PlayerViewController.swift
+  RemoteCommandController.swift
+  SceneDelegate.swift
+  Info.plist
+  Assets.xcassets/
+CarPlayEntitlements/         # exemplos condicionados à aprovação da Apple
+scripts/build-unsigned-ipa.sh
+.github/workflows/build-ipa.yml
+gen_xcodeproj.py
 ```
 
-## Regerar o projeto usando somente Python
+## Gerar IPA no GitHub (sem Mac local)
 
-O arquivo `gen_xcodeproj.py` inclui os nove fontes Swift, o manifesto de cenas, o scheme,
-os arquivos de entitlement de exemplo, o script de empacotamento e este README.
+1. No repositório `DrOtavio/streamplay-ios`, substitua os arquivos anteriores pelos deste pacote **mantendo a hierarquia**. A pasta `.github/workflows` precisa ser incluída. Não suba a pasta `.git`.
+2. Entre em **Actions → Build StreamPlay 4 IPA → Run workflow**. O runner `xcode-27` executa `xcodebuild` em macOS com Xcode.
+3. Se a execução ficar verde, baixe o artifact **StreamPlay-v4-IPA**, extraia `StreamPlay-unsigned.ipa` e assine com Sideloadly. O IPA assinado com Apple ID grátis funciona no iPhone, mas **não concede autorização de vídeo CarPlay**.
+4. Se falhar, copie a primeira mensagem de erro na etapa `Build unsigned IPA`. Os arquivos Swift passaram por análise sintática local; **não foi possível fazer o typecheck/compilação iOS no Linux**.
+
+### Gerar no macOS localmente
 
 ```bash
-# Gera todos os arquivos em pasta nova, a partir apenas do Python
-python3 gen_xcodeproj.py --output ./NovoStreamPlay
-
-# Gerar dentro da pasta em que o script está (preserva arquivos existentes)
-python3 gen_xcodeproj.py
-
-# Sobrescreve arquivos existentes. ATENÇÃO: descarta edições no código/projeto.
-python3 gen_xcodeproj.py --force
+bash scripts/build-unsigned-ipa.sh
 ```
 
-Esse comando não compila um IPA em Linux/Windows. O projeto precisa ser aberto
-no Xcode (macOS). O `Info.plist` usa `GENERATE_INFOPLIST_FILE = NO` e é gerado
-fisicamente em `StreamPlay/Info.plist`; o `project.pbxproj` referencia exatamente
-essa localização. O manifesto declara explicitamente as classes
-`UIWindowScene` e `CPTemplateApplicationScene` com seus delegados.
-
-Os IDs do `.pbxproj` são determinísticos (MD5 de 24 caracteres), o que facilita
-acompanhar mudanças no controle de versão. O `--force` recria um estado limpo e
-pode sobrescrever configurações de assinatura ou alterações feitas pelo Xcode.
-
-## Compilar no Xcode
-
-1. Requer macOS + Xcode 27 para compilar o trecho mais novo (`CPPlaybackConfiguration`, iOS 27). Os arquivos usam sintaxe Swift 5.9+, e o projeto mantém `SWIFT_VERSION = 5.0` para o *Swift 5 language mode* aceito pelo Xcode — não significa que o compilador seja Swift 5.0.
-2. Descompacte e abra `StreamPlay.xcodeproj`. Selecione o scheme `StreamPlay`.
-3. Em **TARGETS > StreamPlay > Signing & Capabilities**, mude Bundle Identifier para um identificador exclusivo, por exemplo `com.seudominio.streamplay`.
-4. Selecione **Personal Team** e **Automatically manage signing**; selecione seu iPhone conectado ou simulador.
-5. Clique **Run**. O iPhone mostra canais HLS de teste; troque os endereços em `MockChannelService` pelos seus HLS autorizados.
-6. Teste trocar de canal; o objeto `AVPlayer` continua o mesmo e `replaceCurrentItem` substitui apenas o item. `VideoPlayer` e `PlayerLayerView` podem compartilhar o mesmo player; o exemplo apresenta `VideoPlayer` no iPhone.
-
-## Habilitar CarPlay com conta/autorização compatível
-
-1. Inscreva-se no Apple Developer Program e solicite à Apple o CarPlay entitlement apropriado à categoria do app, sujeito a avaliação. App de vídeo requer categoria vídeo e fontes/licenças válidas.
-2. Após aprovação, configure o App ID e provisioning profile com a capacidade gerenciada aprovada, segundo as instruções da Apple.
-3. Escolha **um exemplo** em `CarPlayEntitlements/`: áudio, vídeo, ou áudio+vídeo. Use o exemplo combinado apenas se ambos os entitlements estiverem aprovados. Copie-o para `StreamPlay/StreamPlay.entitlements` (remova `.example`).
-4. Em **Build Settings > Code Signing Entitlements**, use o caminho relativo `StreamPlay/StreamPlay.entitlements`, para Debug e Release; nunca insira a chave sem autorização no profile.
-5. Para **áudio**, deixe `CarPlayMode = audio` em `Info.plist` e use **carplay-audio** quando aprovado.
-6. Para **vídeo**, altere para `CarPlayMode = video` e use **carplay-video** quando aprovado, com iOS 27+ e veículo/Simulator compatível. Para os dois modos, utilize o exemplo combinado somente com ambas as autorizações. O player deve ter suporte AirPlay: `AVPlayer.allowsExternalPlayback = true` e `AVRoutePickerView` estão incluídos.
-7. Para validação em carro real, use um provisioning profile que inclua o entitlement; conectar ou confiar no app com Sideloadly não bypassa essa exigência.
-
-## Criar `.ipa`
-
-### Opção A — Xcode Archive (perfil de desenvolvimento/distribuição compatível)
-
-1. Selecione **Any iOS Device (arm64)**, depois **Product > Archive**.
-2. No **Organizer > Distribute App**, escolha a opção de distribuição permitida por sua conta e perfil.
-3. Uma exportação de desenvolvimento/distribuição pode gerar um IPA assinado; o caminho exato depende das autorizações e do tipo de conta. Uma Personal Team pode restringir Archive/Export; se não for possível, use o método abaixo.
-
-### Opção B — gerar IPA NÃO ASSINADO para re-signing
-
-No Terminal (macOS):
+## Regenerar projeto via Python
 
 ```bash
-cd StreamPlay
-./scripts/build-unsigned-ipa.sh
+python3 gen_xcodeproj.py --output ./OutroStreamPlay
+python3 test_bootstrap.py
 ```
 
-Resultado: `dist/StreamPlay-unsigned.ipa` contendo `Payload/StreamPlay.app`. Esse IPA **não é instalável como está**. Use AltStore ou Sideloadly para assinar com seu Apple ID (dentro das limitações da conta), ou prefira instalar diretamente com o Xcode. Essa re-assinatura não cria CarPlay managed entitlements nem autoriza uma categoria restrita. Com Apple ID gratuito, aplicativos instalados por métodos de sideload frequentemente precisam ser renovados periodicamente, conforme a ferramenta e a assinatura.
+`gen_xcodeproj.py` guarda os arquivos do projeto em uma carga compactada e cria uma cópia idêntica. Use `--force` para substituir edições locais. O `Info.plist` tem HTTP liberado (`NSAllowsArbitraryLoads = true`) para playlists IPTV que usam endpoints não TLS. Isso reduz a proteção de transporte; prefira HTTPS e não use fontes desconhecidas com credenciais importantes.
 
-## Debug CarPlay
+## Observações técnicas
 
-1. Inicie um simulador de iPhone no Xcode; em **Simulator > I/O > External Displays > CarPlay**, abra a tela. Dependendo da versão, instale também o **CarPlay Simulator** em *Additional Tools for Xcode* da Apple; o simulador de vídeo exige a configuração de veículo compatível.
-2. Confirme que a aplicação tem entitlement aprovado; sem ele, o ícone não deve aparecer na Home do CarPlay.
-3. Coloque breakpoints em `templateApplicationScene(_:didConnect:)`, `installRootTemplate()`, e `select(_:)`.
-4. Veja logs em Xcode Console para erros de `pushTemplate`/`setRootTemplate`. `CPListItem.handler` chama `completion()` em todos os caminhos.
-5. Para teste em dispositivo real, use iPhone com iOS compatível, CarPlay habilitado e app instalado com provisioning autorizado. Em um carro que suporte vídeo, teste **somente estacionado**, com suporte de vídeo habilitado pelo fabricante.
-6. Verifique áudio, troca de streams, interrupções por chamada, retorno do background, conexão/desconexão CarPlay e alterações de disponibilidade do vídeo. Use **AVPlayerItem.status**, Xcode Instruments, Console e o Network Link Conditioner para analisar HLS.
+- O player `AVPlayer` mantém a mesma instância e troca somente `AVPlayerItem`.
+- Sites YouTube/Twitch/Plex podem impor restrições próprias e conteúdos DRM; não há bypass de DRM.
+- CarPlay renderiza navegador e cursor **somente** na cena `UIWindowSceneSessionRoleCarPlay` autorizada; `CPInterfaceController` não suporta `pushTemplate` com `UIViewController`.
+- O toque remoto usa `elementFromPoint` e `click()` do DOM para links e botões; alguns sites ignoram eventos não confiáveis, inclusive players de vídeo.
+- APIs públicas não permitem garantir vídeo no painel de qualquer central apenas com IPA recompilado.
+- O modelo de Mapas fornece mapa, não navegação curva-a-curva.
 
-## Limitações/proximos passos
-
-- Dados e URLs HLS são demos públicos; podem não ser lives ou eventualmente ficar indisponíveis. Não integram canais comerciais nomeados.
-- O modo **Search** no CarPlay é uma lista ordenada. `CPSearchTemplate` é voltado para apps de navegação e um teclado arbitrário não pode ser implementado com templates de mídia.
-- Evite publicar listas M3U de terceiros sem licença ou transmitir conteúdo protegido sem autorização.
-- Para produção: testes de integração, retry exponencial, tratamento de DRM/FairPlay Streaming se necessário, autenticação de catálogo, política de caching, thumbnails válidas e métricas de erros de streaming.
-- `objectVersion = 56`, `LastUpgradeCheck = 1500` e `CreatedOnToolsVersion = 15.0` são metadados coerentes para um projeto OpenStep legível por ferramentas antigas; **não** tornam as APIs iOS 27 compiláveis no Xcode 15. O compilador usado deve trazer o iOS 27 SDK.
-- O app inclui um AppIcon de demonstração gerado com Python stdlib (PNG RGB opaco de 1024×1024). Substitua-o pela identidade visual da marca antes de publicar.
-- Skip forward/backward ficam intencionalmente desativados por se tratar de demos de streaming live. Configure handlers de seek somente quando houver VOD com segmentos buscáveis.
-- Não foi feita compilação via Xcode neste ambiente, portanto não há garantia de build ou de reprodução no hardware sem validação macOS.
-
-## Referências Apple
-
-- https://developer.apple.com/documentation/carplay/displaying-content-in-carplay
-- https://developer.apple.com/documentation/carplay/requesting-carplay-entitlements
-- https://developer.apple.com/documentation/carplay/cpinterfacecontroller
-- https://developer.apple.com/documentation/carplay/cpplaybackconfiguration
-- https://developer.apple.com/videos/play/wwdc2026/212/
+Referências:
+- https://github.com/rPlayAI/cafari-lite (MIT, conceito de janela CarPlay)
 - https://developer.apple.com/carplay/
+- https://github.blog/changelog/2026-10-15-xcode-27-runner-image-generally-available/
