@@ -1,0 +1,25 @@
+name: Build StreamPlay IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: xcode-27
+
+    steps:
+      - name: Baixar codigo
+        uses: actions/checkout@v4
+
+      - name: Verificar Xcode
+        run: xcodebuild -version
+
+      - name: Compilar e gerar IPA
+        run: bash scripts/build-unsigned-ipa.sh
+
+      - name: Disponibilizar IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: StreamPlay-IPA
+          path: dist/StreamPlay-unsigned.ipa
+          if-no-files-found: error
