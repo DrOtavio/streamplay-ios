@@ -1,0 +1,18 @@
+StreamPlay v4.1 — Correção do primeiro erro de build no Xcode 27.1
+
+Erro encontrado no GitHub Actions:
+    BrowserStore.swift:123:27: 'self' used in property access 'tabs' before all stored properties are initialized
+
+Correção:
+- Inicializa a primeira BrowserTab como variável local e atribui tabs e activeTabID usando a mesma instância.
+- Atualiza o gerador gen_xcodeproj.py para que --force não recrie a versão defeituosa.
+- Os testes continuam verificando a estrutura e detectam essa regressão; se swiftc não estiver disponível no WSL, registram o skip.
+
+Uso no WSL, depois de extrair o ZIP para Downloads:
+    cd ~/streamplay-build
+    unzip -oq '/mnt/c/Users/dell/Downloads/StreamPlay-v4.1-Correcao-BrowserStore.zip' -d /tmp/streamplay-v41
+    cp -a /tmp/streamplay-v41/StreamPlay/. ~/streamplay-build/
+    python3 test_bootstrap.py
+
+Depois envie os arquivos atualizados ao GitHub e execute o workflow novamente.
+A correção não foi compilada com SDK iOS neste ambiente e não desbloqueia entitlement CarPlay.

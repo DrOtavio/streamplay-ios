@@ -111,7 +111,7 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavigationDe
 
 @MainActor
 final class BrowserStore: ObservableObject {
-    @Published private(set) var tabs: [BrowserTab] = [BrowserTab()]
+    @Published private(set) var tabs: [BrowserTab]
     @Published var activeTabID: UUID
     @Published private(set) var bookmarks: [BrowserBookmark] = []
     @Published private(set) var history: [BrowserBookmark] = []
@@ -120,7 +120,11 @@ final class BrowserStore: ObservableObject {
     private let historyKey = "streamplay.v4.browser.history"
 
     init() {
-        activeTabID = tabs[0].id
+        // Do not access self.tabs until all stored properties have been initialized.
+        // The initial tab and active ID must refer to the same BrowserTab instance.
+        let firstTab = BrowserTab()
+        self.tabs = [firstTab]
+        self.activeTabID = firstTab.id
         if let data = UserDefaults.standard.data(forKey: bookmarkKey),
            let decoded = try? JSONDecoder().decode([BrowserBookmark].self, from: data) { bookmarks = decoded }
         if let data = UserDefaults.standard.data(forKey: historyKey),
