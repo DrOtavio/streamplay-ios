@@ -1,3 +1,37 @@
+# StreamPlay v4.2 — Assistir e Ajustes redesenhados
+
+Nesta versão a interface original foi ajustada a partir de referências visuais enviadas pelo usuário. Não contém código ou arquivos proprietários do LeyTV.
+
+## Novidades
+
+- Aba **Assistir**: busca, filtro Tudo/TV ao vivo/Filmes, fontes e favoritos, histórico de reprodução com logotipos, categorias com totais e navegação para canais.
+- Aba **Ajustes**: qualidade de reprodução HLS persistida em UserDefaults, codec de entrada identificado por AVFoundation quando disponível, situação da cena CarPlay, fontes e FAQ.
+- **Importante**: a opção de qualidade usa `AVPlayerItem.preferredPeakBitRate` e `preferredMaximumResolution`. Ela **não transcodifica** streams para H.264 nem afeta o formato de uma hipotética transmissão de tela ao carro.
+- O codec exibido é o do track de vídeo carregado (best effort). Se a detecção falhar, será apresentado como não identificado.
+- DLNA/UPnP está indicado como **não disponível** e não existe paywall/cota fictícios.
+
+## CarPlay
+
+O suporte a janela visual CarPlay é um experimento condicionado aos entitlements autorizados pela Apple. O app continua oferecendo player IPTV e browser no iPhone com a assinatura usual. A instalação pelo Sideloadly não concede automaticamente permissão de vídeo CarPlay. Não reproduza conteúdo visual na tela do motorista durante a condução.
+
+## Compilação
+
+No Windows/WSL é possível validar e subir os fontes. O IPA exige macOS + Xcode. Use o workflow em `.github/workflows/build-ipa.yml` no GitHub Actions com `xcode-27`, ou abra `StreamPlay.xcodeproj` no Mac.
+
+```bash
+python3 test_bootstrap.py
+# no macOS:
+bash scripts/build-unsigned-ipa.sh
+```
+
+O script gera `dist/StreamPlay-unsigned.ipa` somente após uma compilação Xcode bem-sucedida. Assine antes de instalar.
+
+## Observações
+
+O filtro "Filmes" usa palavras-chave nas categorias M3U, pois o padrão não define uma distinção universal entre canais ao vivo e VOD. Alguns provedores podem classificar o catálogo de maneira diferente.
+
+---
+
 # StreamPlay 4 — Navegador + IPTV + CarPlay experimental
 
 **Objetivo:** aplicativo iOS com UI original inspirada na organização do LeyTV (preto, acento lima, quatro abas, tela Carro, Browser e IPTV). Não contém código, ícones, logotipos nem outros arquivos do LeyTV. Requer iOS 17+ para o iPhone; fontes AVKit/WebKit/MapKit são nativas.

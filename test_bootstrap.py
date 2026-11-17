@@ -26,6 +26,13 @@ with tempfile.TemporaryDirectory(prefix="streamplay-v4-smoke-") as temp:
         assert hashlib.sha256(expected).digest() == hashlib.sha256(received).digest(), name
     for name in (".github/workflows/build-ipa.yml", "scripts/build-unsigned-ipa.sh", "README.md"):
         assert (output / name).exists()
+    ui = (output / "StreamPlay" / "ContentView.swift").read_text()
+    model = (output / "StreamPlay" / "ChannelViewModel.swift").read_text()
+    assert "Reproduzidos recentemente" in ui
+    assert "Qualidade da reprodução" in ui
+    assert "Vídeo · codec da fonte" in ui
+    assert "private func inspectCodec" in model
+    assert "preferredPeakBitRate" in model
     browser_source = (output / "StreamPlay" / "BrowserStore.swift").read_text()
     assert "let firstTab = BrowserTab()" in browser_source
     assert "self.tabs = [firstTab]" in browser_source
@@ -41,4 +48,4 @@ with tempfile.TemporaryDirectory(prefix="streamplay-v4-smoke-") as temp:
         print("SKIP: swiftc indisponível; parse Swift dependerá do Xcode no GitHub Actions")
     subprocess.run(command, check=True)
     subprocess.run(command + ["--force"], check=True)
-    print("PASS: project + CarPlay scene roles + BrowserStore fix + Swift sources + generator idempotence + --force")
+    print("PASS: v4.2 UI + codec inspection + HLS quality + CarPlay scene roles + browser + Swift + generator")

@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 struct Channel: Identifiable, Hashable, Codable, Sendable {
     let id: String
@@ -42,5 +43,28 @@ enum CarPlayMode: String {
     static var configured: Self {
         let mode = Bundle.main.object(forInfoDictionaryKey: "CarPlayMode") as? String
         return Self(rawValue: mode ?? "audio") ?? .audio
+    }
+}
+
+/// Limits adaptive HLS playback on the phone, not the video stream shown on CarPlay.
+enum PlaybackQuality: String, CaseIterable, Identifiable {
+    case automatic = "Automática"
+    case economy = "Economia de dados"
+    case hd = "Até 720p"
+    case fullHD = "Até 1080p"
+
+    var id: String { rawValue }
+    var peakBitRate: Double {
+        switch self {
+        case .automatic, .hd, .fullHD: return 0
+        case .economy: return 900_000
+        }
+    }
+    var maximumResolution: CGSize {
+        switch self {
+        case .automatic, .economy: return .zero
+        case .hd: return CGSize(width: 1280, height: 720)
+        case .fullHD: return CGSize(width: 1920, height: 1080)
+        }
     }
 }

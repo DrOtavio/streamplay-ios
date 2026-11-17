@@ -28,7 +28,7 @@ private enum MainTab: String, CaseIterable {
 struct ContentView: View {
     @ObservedObject var viewModel: ChannelViewModel
     @ObservedObject private var car = CarDisplayCoordinator.shared
-    @State private var selectedTab: MainTab = .car
+    @State private var selectedTab: MainTab = .watch
 
     var body: some View {
         ZStack {
@@ -233,104 +233,304 @@ private struct WatchHomeView: View {
     }
 }
 
+private struct ChannelCategoryCount: Identifiable {
+    let title: String
+    let total: Int
+    var id: String { title }
+}
+
 private struct IPTVPage: View {
     @ObservedObject var viewModel: ChannelViewModel
     var standalone = false
-    @Environment(\.dismiss) private var dismiss
     @State private var search = ""
-    @State private var category = "Todos"
+    @State private var mediaFilter = "Tudo"
+    @State private var selectedSourceID: String? = nil
     @State private var onlyFavorites = false
     @State private var showingImporter = false
+    @State private var showingSources = false
     @State private var selectedChannel: Channel?
 
-    private var categories: [String] {
-        ["Todos"] + Array(Set(viewModel.channels.map(\.category))).sorted()
+    private let types = ["Tudo", "TV ao vivo", "Filmes"]
+
+    private func movie(_ channel: Channel) -> Bool {
+        let value = channel.category.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+        return ["movie", "filme", "cinema", "vod", "series", "séries", "pelicula"].contains(where: { value.contains($0) })
     }
+
     private var filtered: [Channel] {
-        viewModel.channels.filter {
-            (category == "Todos" || $0.category == category) &&
-            (!onlyFavorites || viewModel.isFavorite($0)) &&
-            (search.isEmpty || $0.name.localizedCaseInsensitiveContains(search))
+        viewModel.channels.filter { channel in
+            let belongs = selectedSourceID == nil || channel.playlistID == selectedSourceID
+            let typeMatches = mediaFilter == "Tudo" || (mediaFilter == "Filmes" ? movie(channel) : !movie(channel))
+            return belongs && typeMatches &&
+                   (!onlyFavorites || viewModel.isFavorite(channel)) &&
+                   (search.isEmpty || channel.name.localizedCaseInsensitiveContains(search) || channel.category.localizedCaseInsensitiveContains(search))
         }
+    }
+
+    private var categories: [ChannelCategoryCount] {
+        let values = Dictionary(grouping: filtered, by: \.category)
+        return values.map { ChannelCategoryCount(title: $0.key, total: $0.value.count) }
+                     .sorted { $0.total == $1.total ? $0.title < $1.title : $0.total > $1.total }
+    }
+
+    private var recentFiltered: [Channel] {
+        viewModel.recentChannels.filter { channel in filtered.contains(where: { $0.id == channel.id }) }
     }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 21) {
+            VStack(alignment: .leading, spacing: 26) {
                 if !standalone { BackHeader(title: "Mídia") }
-                PageHeading(title: "Assistir", subtitle: "Biblioteca IPTV")
-                HStack(spacing: 13) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(Theme.accent)
-                    TextField("Buscar canal", text: $search).autocorrectionDisabled()
-                        .foregroundStyle(.white)
-                    if !search.isEmpty { Button { search = "" } label: { Image(systemName: "xmark.circle.fill") } }
-                }
-                .padding(15).background(Theme.raised, in: RoundedRectangle(cornerRadius: 17))
-                HStack(spacing: 10) {
-                    Button { showingImporter = true } label: {
-                        Label("Adicionar M3U", systemImage: "plus.circle.fill")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(Color.black)
-                            .padding(.horizontal, 16).padding(.vertical, 13)
-                            .background(Theme.accent, in: Capsule())
-                    }
-                    Button { onlyFavorites.toggle() } label: {
-                        Image(systemName: onlyFavorites ? "star.fill" : "star")
-                            .frame(width: 45, height: 45)
+                HStack(alignment: .center, spacing: 12) {
+                    Button { showingSources = true } label: {
+                        Image(systemName: "tray.full")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(Theme.accent)
+                            .frame(width: 48, height: 48)
                             .background(Theme.raised, in: Circle())
+                            .overlay(Circle().stroke(Theme.border))
                     }
                     Spacer()
-                    Text("\(viewModel.channels.count) canais")
-                        .font(.caption).foregroundStyle(Theme.muted)
+                    Button { onlyFavorites.toggle() } label: {
+                        Image(systemName: onlyFavorites ? "star.fill" : "star")
+                            .font(.system(size: 19))
+                            .foregroundStyle(Theme.accent)
+                            .frame(width: 48, height: 48)
+                    }
+                    Button { showingImporter = true } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 25, weight: .medium))
+                            .foregroundStyle(Theme.accent)
+                            .frame(width: 48, height: 48)
+                    }
                 }
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 9) {
-                        ForEach(categories, id: \.self) { name in
-                            Button { category = name } label: {
-                                Text(name).font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(category == name ? Color.black : .white)
-                                    .padding(.horizontal, 15).padding(.vertical, 10)
-                                    .background(category == name ? Theme.accent : Theme.raised, in: Capsule())
+                Text("Assistir")
+                    .font(.system(size: 38, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                HStack(spacing: 13) {
+                    Image(systemName: "magnifyingglass").font(.system(size: 21)).foregroundStyle(.white.opacity(0.85))
+                    TextField("Buscar canais, filmes ou séries", text: $search)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .foregroundStyle(.white)
+                    if !search.isEmpty {
+                        Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }
+                    }
+                }
+                .padding(17)
+                .background(Color(red: 0.13, green: 0.14, blue: 0.14), in: Capsule())
+
+                HStack(spacing: 13) {
+                    Image(systemName: "play.rectangle.on.rectangle").foregroundStyle(Theme.accent).font(.title3)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Minha biblioteca").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.accent)
+                        Text("\(viewModel.sources.count) fontes adicionadas").font(.system(size: 13)).foregroundStyle(Theme.muted)
+                    }
+                    Spacer()
+                    Text("\(viewModel.channels.count) canais").font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Theme.accent)
+                }
+                .padding(17)
+                .background(Theme.panel, in: RoundedRectangle(cornerRadius: 22))
+
+                VStack(alignment: .leading, spacing: 13) {
+                    HStack(spacing: 5) {
+                        ForEach(types, id: \.self) { type in
+                            Button { mediaFilter = type } label: {
+                                Text(type)
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(mediaFilter == type ? Color.black : Theme.muted)
+                                    .lineLimit(1).minimumScaleFactor(0.8)
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                                    .background(mediaFilter == type ? Theme.accent : Color.clear, in: RoundedRectangle(cornerRadius: 15))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(5)
+                    .background(Theme.raised, in: RoundedRectangle(cornerRadius: 19))
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 9) {
+                            filterChip(title: "Favoritos", symbol: "star.fill", selected: onlyFavorites) { onlyFavorites.toggle() }
+                            filterChip(title: "Todas as fontes", symbol: nil, selected: selectedSourceID == nil) { selectedSourceID = nil }
+                            ForEach(viewModel.sources) { source in
+                                filterChip(title: source.name, symbol: nil, selected: selectedSourceID == source.id) { selectedSourceID = source.id }
                             }
                         }
                     }
                 }
-                if filtered.isEmpty {
-                    VStack(spacing: 13) {
-                        Image(systemName: "tv.slash").font(.system(size: 40)).foregroundStyle(Theme.muted)
-                        Text("Nenhum canal encontrado").font(.headline)
-                        Text("Importe sua lista M3U ou altere os filtros.").font(.subheadline).foregroundStyle(Theme.muted)
-                    }
-                    .frame(maxWidth: .infinity).padding(35)
-                    .background(Theme.panel, in: RoundedRectangle(cornerRadius: 22))
-                } else {
-                    LazyVStack(spacing: 10) {
-                        ForEach(filtered) { channel in
-                            HStack(spacing: 0) {
-                                Button { selectedChannel = channel } label: { ChannelRowCard(channel: channel) }
-                                    .buttonStyle(.plain)
-                                Button { viewModel.toggleFavorite(channel) } label: {
-                                    Image(systemName: viewModel.isFavorite(channel) ? "star.fill" : "star")
-                                        .font(.system(size: 19))
-                                        .foregroundStyle(Theme.accent)
-                                        .padding(17)
+                .padding(14)
+                .background(Theme.panel, in: RoundedRectangle(cornerRadius: 23))
+
+                VStack(alignment: .leading, spacing: 17) {
+                    Text("Reproduzidos recentemente")
+                        .font(.system(size: 21, weight: .semibold))
+                        .foregroundStyle(Theme.muted)
+                    if recentFiltered.isEmpty {
+                        Text("Seus canais recentes aparecerão aqui após a primeira reprodução.")
+                            .font(.subheadline).foregroundStyle(Theme.muted)
+                            .padding(20).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Theme.panel, in: RoundedRectangle(cornerRadius: 19))
+                    } else {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(alignment: .top, spacing: 12) {
+                                ForEach(Array(recentFiltered.prefix(12))) { channel in
+                                    Button { selectedChannel = channel } label: {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            ZStack {
+                                                RoundedRectangle(cornerRadius: 18).fill(Theme.panel)
+                                                if let logo = channel.logoUrl {
+                                                    AsyncImage(url: logo) { image in image.resizable().scaledToFit() } placeholder: {
+                                                        Image(systemName: "play.tv").foregroundStyle(Theme.accent)
+                                                    }
+                                                    .padding(18)
+                                                } else {
+                                                    Image(systemName: "play.tv.fill").font(.system(size: 32)).foregroundStyle(Theme.accent)
+                                                }
+                                            }
+                                            .frame(width: 148, height: 100)
+                                            .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.border))
+                                            Text(channel.name).font(.system(size: 14, weight: .semibold)).lineLimit(2)
+                                                .foregroundStyle(.white)
+                                            Text(channel.category).font(.caption).foregroundStyle(Theme.muted).lineLimit(1)
+                                        }
+                                        .frame(width: 148, alignment: .leading)
+                                    }.buttonStyle(.plain)
                                 }
                             }
-                            .background(Theme.panel, in: RoundedRectangle(cornerRadius: 19))
-                            .overlay(RoundedRectangle(cornerRadius: 19).stroke(Theme.border))
                         }
                     }
                 }
-                Text("Use somente listas e transmissões para as quais você tenha autorização.")
+
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Categorias")
+                        .font(.system(size: 21, weight: .semibold))
+                        .foregroundStyle(Theme.muted)
+                    if filtered.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label("Nenhum canal encontrado", systemImage: "tv.slash")
+                                .font(.headline)
+                            Text("Adicione uma fonte M3U pelo botão + ou altere os filtros.")
+                                .foregroundStyle(Theme.muted).font(.subheadline)
+                            Button { showingImporter = true } label: {
+                                Label("Importar lista IPTV", systemImage: "plus")
+                                    .font(.headline).foregroundStyle(Color.black)
+                                    .padding(13).background(Theme.accent, in: Capsule())
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .modifier(PanelModifier())
+                    } else {
+                        ForEach(categories) { group in
+                            NavigationLink {
+                                CategoryChannelsPage(viewModel: viewModel, title: group.title, channels: filtered.filter { $0.category == group.title })
+                            } label: {
+                                HStack(spacing: 15) {
+                                    Image(systemName: "dot.radiowaves.left.and.right")
+                                        .font(.system(size: 20))
+                                        .foregroundStyle(Theme.accent)
+                                        .frame(width: 40, height: 40)
+                                        .background(Theme.raised, in: RoundedRectangle(cornerRadius: 12))
+                                    Text(group.title).font(.system(size: 17, weight: .medium)).foregroundStyle(.white)
+                                    Spacer()
+                                    Text("\(group.total)").foregroundStyle(Theme.muted)
+                                    Image(systemName: "chevron.right").foregroundStyle(Theme.muted)
+                                }
+                                .padding(14)
+                                .background(Theme.panel, in: RoundedRectangle(cornerRadius: 17))
+                            }.buttonStyle(.plain)
+                        }
+                    }
+                }
+                Text("Reproduza apenas fontes para as quais você tenha autorização.")
                     .font(.footnote).foregroundStyle(Theme.muted)
             }
-            .padding(.horizontal, 20).padding(.top, 23).padding(.bottom, 25)
+            .padding(.horizontal, 18).padding(.top, 18).padding(.bottom, 24)
         }
         .background(Theme.background)
         .scrollIndicators(.hidden)
         .sheet(isPresented: $showingImporter) { PlaylistImportPage(viewModel: viewModel) }
+        .sheet(isPresented: $showingSources) { SourceManagerPage(viewModel: viewModel) }
         .sheet(item: $selectedChannel) { ChannelPlayerPage(viewModel: viewModel, channel: $0) }
         .toolbar(.hidden, for: .navigationBar)
+    }
+
+    private func filterChip(title: String, symbol: String?, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                if let symbol { Image(systemName: symbol) }
+                Text(title).lineLimit(1)
+            }
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(selected ? Theme.accent : Theme.muted)
+            .padding(.horizontal, 13).padding(.vertical, 10)
+            .background(selected ? Theme.accent.opacity(0.13) : Theme.raised, in: Capsule())
+            .overlay(Capsule().stroke(selected ? Theme.accent.opacity(0.65) : Theme.border))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct CategoryChannelsPage: View {
+    @ObservedObject var viewModel: ChannelViewModel
+    let title: String
+    let channels: [Channel]
+    @State private var selectedChannel: Channel?
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: 10) {
+                ForEach(channels) { channel in
+                    HStack(spacing: 0) {
+                        Button { selectedChannel = channel } label: { ChannelRowCard(channel: channel) }
+                            .buttonStyle(.plain)
+                        Button { viewModel.toggleFavorite(channel) } label: {
+                            Image(systemName: viewModel.isFavorite(channel) ? "star.fill" : "star")
+                                .foregroundStyle(Theme.accent).padding(17)
+                        }
+                    }
+                    .background(Theme.panel, in: RoundedRectangle(cornerRadius: 16))
+                }
+            }.padding(16)
+        }
+        .background(Theme.background)
+        .navigationTitle(title)
+        .sheet(item: $selectedChannel) { ChannelPlayerPage(viewModel: viewModel, channel: $0) }
+    }
+}
+
+private struct SourceManagerPage: View {
+    @ObservedObject var viewModel: ChannelViewModel
+    @State private var adding = false
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(viewModel.sources) { source in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(source.name).font(.headline)
+                            Text("\(source.channelCount) canais").font(.caption).foregroundStyle(Theme.muted)
+                        }
+                        Spacer()
+                        Button(role: .destructive) { viewModel.removeSource(source) } label: {
+                            Image(systemName: "trash")
+                        }
+                    }
+                }
+                if viewModel.sources.isEmpty {
+                    Text("Nenhuma lista importada.").foregroundStyle(Theme.muted)
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(Theme.background)
+            .navigationTitle("Fontes IPTV")
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("Fechar") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) { Button { adding = true } label: { Image(systemName: "plus") } }
+            }
+            .sheet(isPresented: $adding) { PlaylistImportPage(viewModel: viewModel) }
+        }
+        .preferredColorScheme(.dark)
     }
 }
 
@@ -773,47 +973,164 @@ private struct MapPage: View {
 private struct SettingsPage: View {
     @ObservedObject var viewModel: ChannelViewModel
     @ObservedObject private var car = CarDisplayCoordinator.shared
+    @State private var showHelp = false
+    @State private var showSources = false
+    @State private var showCarDetails = false
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    PageHeading(title: "Ajustes", subtitle: "StreamPlay")
-                    VStack(alignment: .leading, spacing: 14) {
-                        Label("Fontes IPTV (\(viewModel.sources.count))", systemImage: "list.bullet.rectangle").font(.headline)
-                        if viewModel.sources.isEmpty {
-                            Text("Nenhuma lista importada. Abra Assistir para adicionar uma URL ou arquivo M3U.")
+                VStack(alignment: .leading, spacing: 23) {
+                    HStack(spacing: 11) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 28, weight: .medium))
+                            .foregroundStyle(Theme.accent)
+                            .frame(width: 58, height: 58)
+                            .background(Theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("StreamPlay").font(.system(size: 21, weight: .semibold)).foregroundStyle(.white)
+                            Text("IPTV, navegador e controle touchpad no iPhone.")
                                 .font(.subheadline).foregroundStyle(Theme.muted)
                         }
-                        ForEach(viewModel.sources) { source in
-                            HStack {
-                                VStack(alignment: .leading) {
-                                    Text(source.name).font(.subheadline.bold())
-                                    Text("\(source.channelCount) canais").font(.caption).foregroundStyle(Theme.muted)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(17)
+                    .background(Theme.panel, in: RoundedRectangle(cornerRadius: 24))
+                    .overlay(RoundedRectangle(cornerRadius: 24).stroke(Theme.accent.opacity(0.5)))
+
+                    VStack(spacing: 0) {
+                        HStack(spacing: 12) {
+                            settingsIcon("bolt.fill", color: Theme.accent)
+                            Text("Qualidade da reprodução").font(.system(size: 17, weight: .medium))
+                            Spacer()
+                            Picker("Qualidade", selection: $viewModel.quality) {
+                                ForEach(PlaybackQuality.allCases) { quality in
+                                    Text(quality.rawValue).tag(quality)
                                 }
-                                Spacer()
-                                Button(role: .destructive) { viewModel.removeSource(source) } label: { Image(systemName: "trash") }
                             }
-                            Divider().overlay(Theme.border)
+                            .labelsHidden().tint(Theme.muted)
                         }
-                    }.modifier(PanelModifier())
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label("Reprodução", systemImage: "speaker.wave.2.fill").font(.headline)
-                        Slider(value: Binding(get: { Double(viewModel.volume) },
-                                              set: { viewModel.setVolume(Float($0)) }), in: 0...1)
-                        Button("Parar reprodução", role: .destructive) { viewModel.stop() }
-                    }.modifier(PanelModifier())
-                    VStack(alignment: .leading, spacing: 9) {
-                        Label("Diagnóstico CarPlay", systemImage: "car.side.fill").font(.headline)
-                        Text("Janela autorizada: \(car.connected ? "conectada" : "não conectada")")
-                        Text("Modo templates: \(CarPlayMode.configured.rawValue)")
-                        Text("No iOS 26, a janela experimental exige assinatura com entitlements concedidos pela Apple. Sideloadly com Personal Team não fornece essa permissão.")
-                            .font(.footnote).foregroundStyle(Theme.muted)
-                    }.modifier(PanelModifier())
-                    Text("StreamPlay 4.0 · Navegador + IPTV · Interface original inspirada na experiência de uso do LeyTV.")
+                        .frame(minHeight: 74)
+                        settingsDivider
+                        Button { showCarDetails = true } label: {
+                            settingsRow(icon: "car.side.fill", title: "Tela do carro", detail: car.connected ? "Conectado" : "Aguardando")
+                        }.buttonStyle(.plain)
+                        settingsDivider
+                        settingsRow(icon: "dot.radiowaves.left.and.right", title: "Receptor DLNA / UPnP", detail: "Não disponível")
+                    }
+                    .modifier(PanelModifier())
+                    Text("A qualidade acima controla o bitrate e a resolução preferidos do HLS no iPhone. Não altera o sinal enviado ao CarPlay.")
                         .font(.footnote).foregroundStyle(Theme.muted)
-                }.padding(20)
-            }.background(Theme.background).toolbar(.hidden, for: .navigationBar)
+
+                    VStack(spacing: 0) {
+                        Button { showSources = true } label: {
+                            settingsRow(icon: "tray.full.fill", title: "Fontes IPTV", detail: "\(viewModel.sources.count) listas")
+                        }.buttonStyle(.plain)
+                        settingsDivider
+                        Button { showHelp = true } label: {
+                            settingsRow(icon: "questionmark.circle", title: "Ajuda e perguntas frequentes", detail: "")
+                        }.buttonStyle(.plain)
+                    }
+                    .modifier(PanelModifier())
+
+                    Text("App")
+                        .font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.muted)
+                        .padding(.horizontal, 14)
+                    VStack(spacing: 0) {
+                        settingsRow(icon: "play.rectangle.fill", title: "Vídeo · codec da fonte", detail: viewModel.videoCodec)
+                        settingsDivider
+                        settingsRow(icon: "cpu", title: "Codec de saída", detail: "Sem transmissão ativa")
+                        settingsDivider
+                        settingsRow(icon: "display", title: "Tela de destino", detail: car.connected ? "CarPlay detectado" : "iPhone")
+                        settingsDivider
+                        settingsRow(icon: "checkmark.shield", title: "Autorização de vídeo CarPlay", detail: "Requer Apple")
+                    }
+                    .modifier(PanelModifier())
+
+                    Text("Codec H.264 na tela do LeyTV pode indicar seu encoder de saída. Aqui mostramos o codec detectado no stream de entrada; isso não significa que o StreamPlay esteja transmitindo vídeo ao carro.")
+                        .font(.footnote).foregroundStyle(Theme.muted)
+                    Text("StreamPlay v4.2 · Referência visual: layout observado no LeyTV; identidade e implementação independentes.")
+                        .font(.caption).foregroundStyle(Theme.muted)
+                }
+                .padding(.horizontal, 19)
+                .padding(.top, 26)
+                .padding(.bottom, 25)
+            }
+            .background(Theme.background)
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(isPresented: $showCarDetails) { CarDiagnosticsPage() }
+            .sheet(isPresented: $showSources) { SourceManagerPage(viewModel: viewModel) }
+            .sheet(isPresented: $showHelp) { HelpPage() }
         }
+    }
+
+    private var settingsDivider: some View {
+        Divider().overlay(Theme.border).padding(.leading, 55)
+    }
+
+    private func settingsIcon(_ symbol: String, color: Color) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 20, weight: .medium))
+            .foregroundStyle(color)
+            .frame(width: 42, height: 42)
+            .background(color.opacity(0.11), in: RoundedRectangle(cornerRadius: 13))
+    }
+
+    private func settingsRow(icon: String, title: String, detail: String) -> some View {
+        HStack(spacing: 13) {
+            settingsIcon(icon, color: Theme.accent)
+            Text(title).font(.system(size: 16, weight: .medium)).foregroundStyle(.white)
+            Spacer(minLength: 8)
+            if !detail.isEmpty {
+                Text(detail).font(.system(size: 13)).foregroundStyle(Theme.muted)
+                    .lineLimit(2).multilineTextAlignment(.trailing)
+            }
+            Image(systemName: "chevron.right").font(.system(size: 13)).foregroundStyle(Theme.muted)
+        }.frame(minHeight: 72)
+    }
+}
+
+private struct CarDiagnosticsPage: View {
+    @ObservedObject private var car = CarDisplayCoordinator.shared
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 15) {
+                Text("Conexão CarPlay").font(.system(size: 30, weight: .bold))
+                Label(car.connected ? "Cena visual conectada" : "Nenhuma cena visual conectada",
+                      systemImage: car.connected ? "checkmark.circle.fill" : "exclamationmark.triangle")
+                    .foregroundStyle(car.connected ? Theme.accent : .orange)
+                Text("O aplicativo pode aparecer como áudio no CarPlay sem obter permissão para exibir um navegador ou vídeo. iOS e assinatura controlam esse acesso.")
+                Text("Em veículos compatíveis, a reprodução visual deve respeitar o estado estacionado. A instalação via sideload não libera entitlements CarPlay.")
+                    .foregroundStyle(Theme.muted)
+            }.padding(20)
+        }
+        .background(Theme.background)
+        .navigationTitle("Tela do carro")
+    }
+}
+
+private struct HelpPage: View {
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 17) {
+                    help("Como adicionar IPTV?", "Abra Assistir e toque no sinal de + para importar uma lista M3U por arquivo ou endereço HTTPS.")
+                    help("Como usar o navegador?", "Na aba Carro, toque em Navegador. Os sites são carregados com WKWebView no iPhone.")
+                    help("Como usar o touchpad?", "Na aba Carro, abra o controle touchpad. Ele só controla uma janela CarPlay personalizada quando autorizada pelo sistema.")
+                    help("H.264 é obrigatório?", "Não. O formato depende do conteúdo e das capacidades de reprodução. O valor em Ajustes é uma detecção, não uma conversão automática.")
+                }.padding(20)
+            }
+            .background(Theme.background)
+            .navigationTitle("Ajuda")
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Fechar") { dismiss() } } }
+        }.preferredColorScheme(.dark)
+    }
+    private func help(_ question: String, _ answer: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(question).font(.headline).foregroundStyle(.white)
+            Text(answer).font(.subheadline).foregroundStyle(Theme.muted)
+        }.modifier(PanelModifier())
     }
 }
 

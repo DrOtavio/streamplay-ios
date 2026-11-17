@@ -3,6 +3,7 @@ import AVFoundation
 import AVKit
 import Combine
 import MediaPlayer
+import CoreMedia
 
 @MainActor
 final class ChannelViewModel: ObservableObject {
@@ -15,6 +16,14 @@ final class ChannelViewModel: ObservableObject {
     @Published private(set) var volume: Float = 1
     @Published var errorMessage: String?
     @Published var importMessage: String?
+    @Published private(set) var recentIDs: [String] = []
+    @Published private(set) var videoCodec = "Nenhum vídeo em reprodução"
+    @Published var quality: PlaybackQuality = .automatic {
+        didSet {
+            UserDefaults.standard.set(quality.rawValue, forKey: Keys.quality)
+            configureQuality(for: player.currentItem)
+        }
+    }
 
     let player = AVPlayer()
     private let channelService: any ChannelService
@@ -29,6 +38,8 @@ final class ChannelViewModel: ObservableObject {
         static let channels = "streamplay.v4.importedChannels"
         static let sources = "streamplay.v4.sources"
         static let favorites = "streamplay.v4.favorites"
+        static let recent = "streamplay.v4.recentChannels"
+        static let quality = "streamplay.v4.playbackQuality"
     }
 
     init(channelService: any ChannelService) {
@@ -38,6 +49,9 @@ final class ChannelViewModel: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: Keys.sources),
            let saved = try? JSONDecoder().decode([PlaylistSource].self, from: data) { sources = saved }
         if let saved = UserDefaults.standard.array(forKey: Keys.favorites) as? [String] { favorites = Set(saved) }
+        if let recent = UserDefaults.standard.array(forKey: Keys.recent) as? [String] { recentIDs = Array(recent.prefix(40)) }
+        if let saved = UserDefaults.standard.string(forKey: Keys.quality),
+           let selected = PlaybackQuality(rawValue: saved) { quality = selected }
         channels = imported
         player.allowsExternalPlayback = true
         player.usesExternalPlaybackWhileExternalScreenIsActive = true
@@ -128,6 +142,57 @@ final class ChannelViewModel: ObservableObject {
 
     func isFavorite(_ channel: Channel) -> Bool { favorites.contains(channel.id) }
 
+    var recentChannels: [Channel] {
+        recentIDs.compactMap { id in channels.first(where: { $0.id == id }) }
+    }
+
+    func sourceName(for channel: Channel) -> String {
+        guard let sourceID = channel.playlistID else { return "Demonstração" }
+        return sources.first(where: { $0.id == sourceID })?.name ?? "Lista IPTV"
+    }
+
+    private func configureQuality(for item: AVPlayerItem?) {
+        // These knobs influence HLS adaptive playback on the iPhone. They do not
+        // transcode video or create an unauthorized CarPlay video session.
+        item?.preferredPeakBitRate = quality.peakBitRate
+        item?.preferredMaximumResolution = quality.maximumResolution
+    }
+
+    private func remember(_ channel: Channel) {
+        recentIDs.removeAll(where: { $0 == channel.id })
+        recentIDs.insert(channel.id, at: 0)
+        recentIDs = Array(recentIDs.prefix(40))
+        UserDefaults.standard.set(recentIDs, forKey: Keys.recent)
+    }
+
+    private func inspectCodec(of item: AVPlayerItem, channelID: String) {
+        // HLS manifests can advertise multiple codecs. This is best-effort
+        // inspection of the video track available to AVFoundation.
+        Task { [weak self] in
+            do {
+                guard let track = try await item.asset.loadTracks(withMediaType: .video).first,
+                      let description = try await track.load(.formatDescriptions).first else {
+                    if self?.currentChannel?.id == channelID { self?.videoCodec = "Não identificado" }
+                    return
+                }
+                let subtype = CMFormatDescriptionGetMediaSubType(description)
+                let codec: String
+                switch subtype {
+                case kCMVideoCodecType_H264: codec = "H.264 / AVC"
+                case kCMVideoCodecType_HEVC: codec = "H.265 / HEVC"
+                default:
+                    let bytes: [UInt8] = [24, 16, 8, 0].map { UInt8(truncatingIfNeeded: subtype >> $0) }
+                    codec = String(bytes: bytes, encoding: .ascii) ?? "Outro codec"
+                }
+                guard self?.currentChannel?.id == channelID else { return }
+                self?.videoCodec = codec
+            } catch {
+                guard self?.currentChannel?.id == channelID else { return }
+                self?.videoCodec = "Não identificado"
+            }
+        }
+    }
+
     private func saveLibrary() {
         if let data = try? JSONEncoder().encode(imported) { UserDefaults.standard.set(data, forKey: Keys.channels) }
         if let data = try? JSONEncoder().encode(sources) { UserDefaults.standard.set(data, forKey: Keys.sources) }
@@ -143,9 +208,13 @@ final class ChannelViewModel: ObservableObject {
             return
         }
         currentChannel = channel
+        remember(channel)
+        videoCodec = "Detectando…"
         errorMessage = nil
         itemObservation?.invalidate()
         let item = AVPlayerItem(url: channel.streamUrl)
+        configureQuality(for: item)
+        inspectCodec(of: item, channelID: channel.id)
         itemObservation = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -163,7 +232,7 @@ final class ChannelViewModel: ObservableObject {
     func pause() { player.pause(); isPlaying = false; updateNowPlaying() }
     func togglePlayback() { isPlaying ? pause() : play() }
     func stop() {
-        pause(); player.replaceCurrentItem(with: nil); currentChannel = nil
+        pause(); player.replaceCurrentItem(with: nil); currentChannel = nil; videoCodec = "Nenhum vídeo em reprodução"
         itemObservation?.invalidate(); MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
     func setVolume(_ newValue: Float) {
