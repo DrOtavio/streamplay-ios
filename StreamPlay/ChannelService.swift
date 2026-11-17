@@ -9,7 +9,8 @@ struct MockChannelService: ChannelService {
     func loadChannels() async throws -> [Channel] {
         [
             Channel(id: "demo-apple", name: "Apple HLS", streamUrl: URL(string: "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8")!, category: "Demonstração", description: "Vídeo HLS de teste"),
-            Channel(id: "demo-mux", name: "Mux HLS", streamUrl: URL(string: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8")!, category: "Demonstração", description: "Vídeo HLS de teste")
+            Channel(id: "demo-mux", name: "Mux HLS", streamUrl: URL(string: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8")!, category: "Demonstração", description: "Vídeo HLS de teste"),
+            Channel(id: "demo-mp4", name: "MP4 de teste", streamUrl: URL(string: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4")!, category: "Demonstração", description: "Arquivo MP4 público para teste de decodificação")
         ]
     }
 }

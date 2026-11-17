@@ -18,6 +18,14 @@ final class ChannelViewModel: ObservableObject {
     @Published var importMessage: String?
     @Published private(set) var recentIDs: [String] = []
     @Published private(set) var videoCodec = "Nenhum vídeo em reprodução"
+    @Published private(set) var playbackStatus = "Selecione um canal"
+    @Published private(set) var playbackFailure: String?
+    @Published private(set) var playbackDiagnostic = ""
+
+    var diagnosticReport: String {
+        // Do not copy the full IPTV URL: query strings often contain credentials.
+        "Canal: \(currentChannel?.name ?? "Nenhum")\nEstado: \(playbackStatus)\nCodec: \(videoCodec)\n\(playbackDiagnostic)\nFalha: \(playbackFailure ?? "não informada")"
+    }
     @Published var quality: PlaybackQuality = .automatic {
         didSet {
             UserDefaults.standard.set(quality.rawValue, forKey: Keys.quality)
@@ -33,6 +41,9 @@ final class ChannelViewModel: ObservableObject {
     private var itemObservation: NSKeyValueObservation?
     private var remoteCommands: RemoteCommandController?
     private var interruptionObserver: NSObjectProtocol?
+    private var streamObservers: [NSObjectProtocol] = []
+    private var startupCheck: Task<Void, Never>?
+    private var selectionVersion = 0
 
     private enum Keys {
         static let channels = "streamplay.v4.importedChannels"
@@ -54,13 +65,28 @@ final class ChannelViewModel: ObservableObject {
            let selected = PlaybackQuality(rawValue: saved) { quality = selected }
         channels = imported
         player.allowsExternalPlayback = true
-        player.usesExternalPlaybackWhileExternalScreenIsActive = true
+        // Keep local iPhone video on the iPhone during diagnosis. Do not force
+        // external presentation merely because a display might be connected.
+        player.usesExternalPlaybackWhileExternalScreenIsActive = false
         player.automaticallyWaitsToMinimizeStalling = true
         playerObservation = player.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] player, _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.isPlaying = player.timeControlStatus == .playing
                 self.isLoading = player.timeControlStatus == .waitingToPlayAtSpecifiedRate
+                if self.currentChannel != nil && self.playbackFailure == nil {
+                    switch player.timeControlStatus {
+                    case .playing:
+                        self.playbackStatus = "Reproduzindo"
+                    case .waitingToPlayAtSpecifiedRate:
+                        if !self.playbackStatus.contains("18 segundos") {
+                            self.playbackStatus = "Aguardando dados do servidor…"
+                        }
+                    case .paused:
+                        if !self.isLoading { self.playbackStatus = "Pausado" }
+                    @unknown default: break
+                    }
+                }
                 self.updateNowPlaying()
             }
         }
@@ -77,6 +103,8 @@ final class ChannelViewModel: ObservableObject {
     deinit {
         playerObservation?.invalidate()
         itemObservation?.invalidate()
+        startupCheck?.cancel()
+        streamObservers.forEach { NotificationCenter.default.removeObserver($0) }
         if let interruptionObserver { NotificationCenter.default.removeObserver(interruptionObserver) }
     }
 
@@ -199,41 +227,150 @@ final class ChannelViewModel: ObservableObject {
     }
 
     func select(_ channel: Channel) {
-        if currentChannel?.id == channel.id { play(); return }
+        // Failed items cannot be repaired by calling play() again.
+        if currentChannel?.id == channel.id && playbackFailure == nil && player.currentItem?.status != .failed {
+            play()
+            return
+        }
+        startChannel(channel)
+    }
+
+    func retry() {
+        guard let channel = currentChannel else { return }
+        startChannel(channel)
+    }
+
+    private func startChannel(_ channel: Channel) {
+        selectionVersion += 1
+        let generation = selectionVersion
+        startupCheck?.cancel()
+        streamObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        streamObservers.removeAll()
+        itemObservation?.invalidate()
+
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [.allowAirPlay])
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
-            errorMessage = "Sessão de áudio indisponível: \(error.localizedDescription)"
+            playbackStatus = "Falha na sessão de áudio"
+            playbackFailure = "Sessão de áudio: \(redact(error.localizedDescription))"
+            playbackDiagnostic = "Não foi possível iniciar AVAudioSession"
             return
         }
+
         currentChannel = channel
         remember(channel)
         videoCodec = "Detectando…"
+        playbackStatus = "Abrindo canal…"
+        playbackFailure = nil
+        isPlaying = false
+        isLoading = true
         errorMessage = nil
-        itemObservation?.invalidate()
+        let kind = channel.streamUrl.pathExtension.isEmpty ? "sem extensão" : channel.streamUrl.pathExtension.lowercased()
+        playbackDiagnostic = "Protocolo: \(channel.streamUrl.scheme?.uppercased() ?? "?") • Host: \(channel.streamUrl.host ?? "desconhecido") • Extensão: \(kind)"
+
         let item = AVPlayerItem(url: channel.streamUrl)
         configureQuality(for: item)
         inspectCodec(of: item, channelID: channel.id)
-        itemObservation = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
+        itemObservation = item.observe(\.status, options: [.initial, .new]) { [weak self] observedItem, _ in
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                if item.status == .failed {
-                    self.errorMessage = item.error?.localizedDescription ?? "Falha ao reproduzir o stream."
+                guard let self, self.selectionVersion == generation else { return }
+                switch observedItem.status {
+                case .readyToPlay:
+                    if self.playbackFailure == nil { self.playbackStatus = "Fonte pronta • aguardando quadros…" }
+                case .failed:
+                    self.reportFailure(observedItem.error, item: observedItem)
+                case .unknown: break
+                @unknown default: break
                 }
             }
         }
+
+        let center = NotificationCenter.default
+        streamObservers.append(center.addObserver(forName: AVPlayerItem.newErrorLogEntryNotification, object: item, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.selectionVersion == generation else { return }
+                if let event = item.errorLog()?.events.last {
+                    self.playbackDiagnostic += "\nStream HTTP \(event.errorStatusCode) • \(event.errorDomain): \(self.redact(event.errorComment ?? "sem detalhe"))"
+                    if self.playbackDiagnostic.count > 2400 { self.playbackDiagnostic = String(self.playbackDiagnostic.suffix(2400)) }
+                }
+            }
+        })
+        streamObservers.append(center.addObserver(forName: AVPlayerItem.failedToPlayToEndTimeNotification, object: item, queue: .main) { [weak self] event in
+            let error = event.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
+            Task { @MainActor [weak self] in
+                guard let self, self.selectionVersion == generation else { return }
+                self.reportFailure(error, item: item)
+            }
+        })
+        streamObservers.append(center.addObserver(forName: AVPlayerItem.playbackStalledNotification, object: item, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.selectionVersion == generation else { return }
+                if self.playbackFailure == nil { self.playbackStatus = "Stream travou: aguardando novos dados…" }
+            }
+        })
         player.replaceCurrentItem(with: item)
         updateNowPlaying()
         play()
+
+        // A timed check catches streams that stay black without generating an
+        // AVPlayerItem error. It reports symptoms, not an invented diagnosis.
+        startupCheck = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 18_000_000_000)
+            guard !Task.isCancelled, let self, self.selectionVersion == generation else { return }
+            if item.status == .failed { self.reportFailure(item.error, item: item); return }
+            if self.player.timeControlStatus != .playing {
+                self.playbackStatus = "Sem reprodução após 18 segundos"
+                self.playbackFailure = "O canal não iniciou. Veja o diagnóstico ou teste um canal de demonstração."
+            } else if item.presentationSize.width <= 0 || item.presentationSize.height <= 0 {
+                self.playbackDiagnostic += "\nAVPlayer iniciou, mas a fonte não informou quadros de vídeo (resolução 0×0)."
+                self.playbackStatus = "Reproduzindo sem vídeo detectado"
+            }
+        }
     }
 
-    func play() { guard currentChannel != nil else { return }; player.play(); isPlaying = true; updateNowPlaying() }
+    private func reportFailure(_ error: Error?, item: AVPlayerItem) {
+        let reason = redact(error?.localizedDescription ?? item.error?.localizedDescription ?? "Erro desconhecido do decodificador ou servidor")
+        let code = (error ?? item.error).map { "\(($0 as NSError).domain) [\(($0 as NSError).code)]" } ?? ""
+        playbackStatus = "Erro ao reproduzir"
+        playbackFailure = reason
+        playbackDiagnostic += "\nFalha: \(code) \(reason)"
+        if let last = item.errorLog()?.events.last {
+            playbackDiagnostic += "\nHTTP \(last.errorStatusCode): \(last.errorDomain)"
+        }
+        isLoading = false
+        isPlaying = false
+    }
+
+    private func redact(_ value: String) -> String {
+        // Hide token-bearing links that a framework or server may place in error messages.
+        guard let regex = try? NSRegularExpression(pattern: #"https?://[^\s<>]+"#, options: [.caseInsensitive]) else { return value }
+        return regex.stringByReplacingMatches(in: value, range: NSRange(value.startIndex..<value.endIndex, in: value), withTemplate: "[URL omitida]")
+    }
+
+    func play() {
+        guard currentChannel != nil else { return }
+        if playbackFailure != nil { retry(); return }
+        player.play()
+        // AVPlayer's timeControlStatus observer is the source of truth for isPlaying.
+        updateNowPlaying()
+    }
     func pause() { player.pause(); isPlaying = false; updateNowPlaying() }
     func togglePlayback() { isPlaying ? pause() : play() }
     func stop() {
-        pause(); player.replaceCurrentItem(with: nil); currentChannel = nil; videoCodec = "Nenhum vídeo em reprodução"
-        itemObservation?.invalidate(); MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        pause()
+        selectionVersion += 1
+        startupCheck?.cancel()
+        streamObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        streamObservers.removeAll()
+        itemObservation?.invalidate()
+        player.replaceCurrentItem(with: nil)
+        currentChannel = nil
+        videoCodec = "Nenhum vídeo em reprodução"
+        playbackStatus = "Parado"
+        playbackFailure = nil
+        playbackDiagnostic = ""
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
     func setVolume(_ newValue: Float) {
         volume = min(1, max(0, newValue)); player.volume = volume

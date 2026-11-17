@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import AVKit
 import MapKit
 import UniformTypeIdentifiers
@@ -652,7 +653,35 @@ private struct ChannelPlayerPage: View {
                         Spacer()
                         AirPlayRoutePicker().frame(width: 48, height: 44)
                     }
-                    if viewModel.isLoading { ProgressView("Carregando stream…") }
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label(viewModel.playbackStatus, systemImage: viewModel.playbackFailure == nil ? "waveform.path" : "exclamationmark.triangle.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(viewModel.playbackFailure == nil ? Theme.accent : .orange)
+                        if viewModel.isLoading { ProgressView("Carregando stream…") }
+                        if let failure = viewModel.playbackFailure {
+                            Text(failure).font(.footnote).foregroundStyle(.orange)
+                            Button { viewModel.retry() } label: {
+                                Label("Tentar canal novamente", systemImage: "arrow.clockwise")
+                                    .frame(maxWidth: .infinity).padding(13)
+                                    .background(Theme.raised, in: RoundedRectangle(cornerRadius: 14))
+                            }
+                        }
+                        DisclosureGroup("Diagnóstico do player") {
+                            Text(viewModel.playbackDiagnostic)
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundStyle(Theme.muted)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                            Button("Copiar diagnóstico") {
+                                UIPasteboard.general.string = viewModel.diagnosticReport
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .font(.subheadline)
+                    }
+                    .padding(13)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Theme.panel, in: RoundedRectangle(cornerRadius: 16))
                 }
                 .padding(18)
             }

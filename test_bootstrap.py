@@ -32,6 +32,11 @@ with tempfile.TemporaryDirectory(prefix="streamplay-v4-smoke-") as temp:
     assert "Qualidade da reprodução" in ui
     assert "Vídeo · codec da fonte" in ui
     assert "private func inspectCodec" in model
+    assert "playbackFailure" in model and "newErrorLogEntryNotification" in model
+    assert "usesExternalPlaybackWhileExternalScreenIsActive = false" in model
+    assert "Copiar diagnóstico" in ui and "Tentar canal novamente" in ui
+    assert "MP4 de teste" in (output / "StreamPlay" / "ChannelService.swift").read_text()
+    assert (output / "DIAGNOSTICO_IPTV.md").exists()
     assert "preferredPeakBitRate" in model
     browser_source = (output / "StreamPlay" / "BrowserStore.swift").read_text()
     assert "let firstTab = BrowserTab()" in browser_source
@@ -48,4 +53,4 @@ with tempfile.TemporaryDirectory(prefix="streamplay-v4-smoke-") as temp:
         print("SKIP: swiftc indisponível; parse Swift dependerá do Xcode no GitHub Actions")
     subprocess.run(command, check=True)
     subprocess.run(command + ["--force"], check=True)
-    print("PASS: v4.2 UI + codec inspection + HLS quality + CarPlay scene roles + browser + Swift + generator")
+    print("PASS: v4.3 player diagnostics + retry + public test streams + preserved v4.2 features + bootstrap")
