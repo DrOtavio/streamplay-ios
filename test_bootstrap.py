@@ -34,6 +34,8 @@ with tempfile.TemporaryDirectory(prefix="streamplay-v4-smoke-") as temp:
     assert "private func inspectCodec" in model
     assert "playbackFailure" in model and "newErrorLogEntryNotification" in model
     assert "usesExternalPlaybackWhileExternalScreenIsActive = false" in model
+    assert "options: [.allowAirPlay]" not in model
+    assert "setCategory(.playback, mode: .moviePlayback, options: [])" in model
     assert "Copiar diagnóstico" in ui and "Tentar canal novamente" in ui
     assert "MP4 de teste" in (output / "StreamPlay" / "ChannelService.swift").read_text()
     assert (output / "DIAGNOSTICO_IPTV.md").exists()

@@ -249,7 +249,9 @@ final class ChannelViewModel: ObservableObject {
         itemObservation?.invalidate()
 
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [.allowAirPlay])
+            // AirPlay is implicit for the playback category; .allowAirPlay is valid
+            // only with .playAndRecord and causes OSStatus -50 here.
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
             playbackStatus = "Falha na sessão de áudio"
